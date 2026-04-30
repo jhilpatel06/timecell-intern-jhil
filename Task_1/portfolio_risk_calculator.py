@@ -2,46 +2,50 @@ import copy
 
 
 def compute_risk_metrics(portfolio):
+    # Extract core inputs from portfolio
     total_value = portfolio["total_value_inr"]
     monthly_expenses = portfolio["monthly_expenses_inr"]
     assets = portfolio["assets"]
 
-    post_crash_value = 0
-    max_risk = -1
-    largest_risk_asset = None
-    concentration_warning = False
+    # Initialize aggregate metrics
+    post_crash_value = 0              # total portfolio value after crash
+    max_risk = -1                    # track highest risk contribution
+    largest_risk_asset = None        # asset contributing most to downside
+    concentration_warning = False    # flag if any asset > 40%
 
     for asset in assets:
         allocation = asset["allocation_pct"]
         crash = asset["expected_crash_pct"]
 
-        # Validate allocation
+        # Basic validation → ensures correctness (no invalid allocations)
         if allocation < 0 or allocation > 100:
             raise ValueError(f"Invalid allocation for {asset['name']}")
 
-        # Check concentration
+        # Concentration check → required metric (>40% in single asset)
         if allocation > 40:
             concentration_warning = True
 
-        # Compute asset value
+        # Convert % allocation → actual INR value
         asset_value = total_value * allocation / 100
 
-        # Apply crash
+        # Apply crash scenario (e.g., -80% → retain 20% of value)
         post_crash_asset_value = asset_value * (1 + crash / 100)
         post_crash_value += post_crash_asset_value
 
-        # Risk score
+        # Risk contribution = allocation × crash magnitude
+        # Used to identify most dangerous asset in downturn
         risk_score = abs(allocation * crash)
         if risk_score > max_risk:
             max_risk = risk_score
             largest_risk_asset = asset["name"]
 
-    # Runway calculation
+    # Runway = how long portfolio can sustain expenses post-crash
     if monthly_expenses <= 0:
-        runway_months = float("inf")
+        runway_months = float("inf")  # edge case: no expenses
     else:
         runway_months = post_crash_value / monthly_expenses
 
+    # Ruin test → pass if portfolio survives >12 months
     ruin_test = "PASS" if runway_months > 12 else "FAIL"
 
     return {
@@ -54,8 +58,10 @@ def compute_risk_metrics(portfolio):
 
 
 def apply_moderate_crash(portfolio):
+    # Create a copy to avoid mutating original portfolio
     new_portfolio = copy.deepcopy(portfolio)
 
+    # Moderate scenario = 50% of severe crash impact
     for asset in new_portfolio["assets"]:
         asset["expected_crash_pct"] *= 0.5
 
@@ -63,6 +69,7 @@ def apply_moderate_crash(portfolio):
 
 
 def print_results(title, results):
+    # Simple structured output for readability
     print("\n" + "=" * 50)
     print(title)
     print("=" * 50)
@@ -72,19 +79,22 @@ def print_results(title, results):
 
 
 def print_allocation_bar_chart(portfolio):
+    # CLI visualization → helps quickly inspect allocation distribution
     print("\nPortfolio Allocation:\n")
 
     for asset in portfolio["assets"]:
         name = asset["name"]
         pct = asset["allocation_pct"]
 
-        bar = "█" * int(pct // 2)  # scale down for display
+        bar = "█" * int(pct // 2)  # scaled for terminal width
         print(f"{name:10} | {bar} ({pct}%)")
 
 
 # ---------------- MAIN ---------------- #
 
 if __name__ == "__main__":
+    currency = "INR"
+    # Sample portfolio (1 Cr INR, diversified across assets)
     portfolio = {
         "total_value_inr": 10_000_000,
         "monthly_expenses_inr": 80_000,
@@ -96,16 +106,16 @@ if __name__ == "__main__":
         ]
     }
 
-    # Base scenario
+    # Severe crash → directly uses given expected crash values
     base_results = compute_risk_metrics(portfolio)
 
-    # Moderate crash scenario
+    # Moderate crash → reduced severity for comparison
     moderate_portfolio = apply_moderate_crash(portfolio)
     moderate_results = compute_risk_metrics(moderate_portfolio)
 
-    # Print results
-    print_results("Severe Crash Scenario", base_results)
-    print_results("Moderate Crash Scenario", moderate_results)
+    # Display both scenarios side-by-side (as required in bonus)
+    print_results(f"Severe Crash Scenario (Currency : {currency})", base_results)
+    print_results(f"Moderate Crash Scenario (Currency : {currency})", moderate_results)
 
-    # Show allocation
+    # Optional visualization → quick sanity check of allocations
     print_allocation_bar_chart(portfolio)

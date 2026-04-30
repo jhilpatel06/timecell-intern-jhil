@@ -3,29 +3,56 @@ import os
 from dotenv import load_dotenv
 from groq import Groq
 
-# Load env
+# --- SETUP ---------------------------------------------------------------
+
 load_dotenv()
 
-# Initialize Groq client
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+api_key = os.getenv("GROQ_API_KEY")
+if not api_key:
+    raise ValueError("GROQ_API_KEY not found in environment")
+
+client = Groq(api_key=api_key)
 
 
-def generate_portfolio_explanation(portfolio, tone="beginner"):
-    prompt = f"""
-You are a financial advisor explaining portfolio risk to a non-expert client.
+# --- PROMPT BUILDER ------------------------------------------------------
 
-Your job is NOT to repeat the numbers. Your job is to INTERPRET them.
+
+def build_prompt(portfolio, tone):
+    TONE_MAP = {
+        "beginner": "simple, friendly, non-technical",
+        "experienced": "clear, slightly analytical",
+        "expert": "concise and insight-driven",
+    }
+
+    return f"""
+You are a financial advisor speaking directly to a client analysing and providing recommendations on their investment portfolio.
+
+Write like a short conversation - not a report.
 
 Portfolio:
 {json.dumps(portfolio, indent=2)}
 
-Think about:
-- crash impact (which assets hurt most)
-- concentration risk
-- stability vs volatility
-- ability to survive expenses (runway mindset)
+Your task is to generate:
+- A 3-4 sentence plain-English summary of the portfolio's risk level (focus on risk analysis)
+- One specific thing the investor is doing well
+- One specific thing the investor should consider changing, and why
+- A one-line verdict: 'Aggressive', 'Balanced', or 'Conservative'
 
-Respond STRICTLY in this JSON format:
+Use these reference criteria to judge risk:
+- Crash Impact: assets with high (allocation x crash %) drive most losses
+- Concentration: any single asset above ~40% increases instability
+- Runway: can the portfolio survive expenses after a crash?
+- Dominant Risk: which asset contributes most to downside?
+
+Style:
+- Talk directly to the user ("you")
+- Be conversational and easy to follow
+- Sound like a calm, supportive financial advisor
+- Be empathetic but not dramatic
+- Explain things as if you're helping someone understand their own money
+- Tone: {TONE_MAP.get(tone, TONE_MAP["beginner"])}
+
+Respond STRICTLY in JSON:
 {{
   "summary": "...",
   "strength": "...",
@@ -34,45 +61,38 @@ Respond STRICTLY in this JSON format:
 }}
 
 Guidelines:
+- Summary: 3-4 short sentences explaining the main risk drivers and how stable or unstable the portfolio is (no advice)
+- Strength: one clear, specific positive decision
+- Suggestion: one practical change, explain why the current setup is risky and what improves if changed (write naturally, no nested JSON)
+- Verdict: "Aggressive/Balanced/Conservative" based on overall risk level (Aggressive = high crash impact + concentration, Conservative = low crash impact + good diversification, Balanced = in between) along with one line justification 
 
-SUMMARY:
-- 3–4 sentences
-- Explain overall risk level in simple terms
-- Mention key drivers of risk (e.g. high crypto exposure)
-
-STRENGTH:
-- Identify ONE genuinely good thing about the portfolio
-- Be specific (not generic like "diversified")
-
-SUGGESTION:
-- Give ONE clear, actionable improvement
-- Explain WHY it matters
-
-VERDICT RULES:
-- Aggressive → high volatility / high crash exposure
-- Balanced → mix of risk and stability
-- Conservative → mostly stable assets
-
-TONE:
-- Friendly, clear, non-technical
-- Honest but not harsh
-- Speak like advising a real client
-
-IMPORTANT:
-- Do NOT repeat raw numbers unnecessarily
-- Do NOT include anything outside JSON
+Keep it natural. Avoid repeating the same idea across sections.
+Do not include anything outside the JSON.
 """
+
+
+# --- LLM CALL ------------------------------------------------------------
+
+
+def generate_portfolio_explanation(portfolio, tone="beginner"):
+    prompt = build_prompt(portfolio, tone)
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role": "system", "content": "You are a helpful financial advisor."},
+            {
+                "role": "system",
+                "content": "You are a helpful and honest financial advisor.",
+            },
             {"role": "user", "content": prompt},
         ],
-        temperature=0.7,
+        temperature=0.5,
     )
 
     return response.choices[0].message.content.strip()
+
+
+# --- PARSING -------------------------------------------------------------
 
 
 def parse_output(raw_output):
@@ -80,7 +100,7 @@ def parse_output(raw_output):
         return json.loads(raw_output)
 
     except json.JSONDecodeError:
-        print("\n⚠️ JSON parsing failed. Attempting cleanup...\n")
+        print("\n[WARN] JSON parsing failed. Attempting cleanup...\n")
 
         try:
             start = raw_output.find("{")
@@ -88,9 +108,22 @@ def parse_output(raw_output):
             cleaned = raw_output[start:end]
             return json.loads(cleaned)
         except:
-            print("\n❌ Still failed to parse. Raw output:\n")
+            print("\n[ERROR] Failed to parse output. Raw response:\n")
             print(raw_output)
             return None
+
+
+def validate_output(parsed):
+    required = ["summary", "strength", "suggestion", "verdict"]
+    return all(key in parsed for key in required)
+
+
+def validate_critique(parsed):
+    required = ["status", "issues", "improvement_hint"]
+    return all(key in parsed for key in required)
+
+
+# --- DISPLAY -------------------------------------------------------------
 
 
 def print_clean_output(parsed):
@@ -98,7 +131,7 @@ def print_clean_output(parsed):
     print("PORTFOLIO ANALYSIS")
     print("=" * 50)
 
-    print("\nSummary:")
+    print("\nRisk Analysis:")
     print(parsed.get("summary", "N/A"))
 
     print("\nStrength:")
@@ -111,9 +144,116 @@ def print_clean_output(parsed):
     print(parsed.get("verdict", "N/A"))
 
 
-# ---------------- MAIN ---------------- #
+def print_clean_critique(parsed):
+    print("\n" + "=" * 50)
+    print("CRITIQUE")
+    print("=" * 50)
+
+    print("\nStatus:")
+    print(parsed.get("status", "N/A"))
+
+    print("\nIssues:")
+    issues = parsed.get("issues", [])
+    if issues:
+        for issue in issues:
+            print(f"- {issue}")
+    else:
+        print("None")
+
+    print("\nImprovement Hint:")
+    print(parsed.get("improvement_hint", "N/A"))
+
+
+def critique_output(raw_output):
+    prompt = f"""
+You are reviewing a financial explanation.
+
+Be reasonably critical, but fair. Do NOT fail for minor imperfections.
+
+Evaluate:
+
+1. SUMMARY:
+- Short and clear (approximately 3-4 sentences)
+- Explains main risk drivers
+- Avoids strong advice (minor wording is okay)
+
+2. STRENGTH:
+- One clear positive
+- Should be somewhat specific (not overly generic)
+
+3. SUGGESTION:
+- One actionable change
+- Explains why current setup is risky
+- Explains what improves after change
+
+4. VERDICT:
+- Must be Aggressive / Balanced / Conservative
+- Should match reasoning
+
+5. STYLE:
+- Should feel conversational (not overly formal)
+- Minor repetition is acceptable
+
+Respond STRICTLY in JSON:
+
+{{
+  "status": "PASS" or "FAIL",
+  "issues": ["only include meaningful issues"],
+  "improvement_hint": "one short suggestion"
+}}
+
+Rules:
+- FAIL only if there are MAJOR issues (missing structure, vague suggestion, incorrect reasoning)
+- If issues are minor → still PASS
+- Do NOT be overly strict
+
+Response to review:
+{raw_output}
+"""
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": "You are a balanced and practical reviewer."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+    )
+
+    return response.choices[0].message.content.strip()
+
+
+def parse_critique(raw):
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        print("\n[WARN] Critique JSON parsing failed. Attempting cleanup...\n")
+
+        try:
+            start = raw.find("{")
+            end = raw.rfind("}") + 1
+            cleaned = raw[start:end]
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            print("\n[ERROR] Failed to parse critique. Raw response:\n")
+            print(raw)
+            return {
+                "status": "FAIL",
+                "issues": ["Critique parsing failed"],
+                "improvement_hint": "",
+            }
+    except TypeError:
+        return {
+            "status": "FAIL",
+            "issues": ["Critique parsing failed"],
+            "improvement_hint": "",
+        }
+
+
+# --- MAIN ---------------------------------------------------------------
 
 if __name__ == "__main__":
+
     portfolio = {
         "total_value_inr": 10_000_000,
         "monthly_expenses_inr": 80_000,
@@ -125,12 +265,26 @@ if __name__ == "__main__":
         ],
     }
 
-    raw = generate_portfolio_explanation(portfolio)
+    # Generate explanation
+    raw = generate_portfolio_explanation(portfolio, tone="beginner")
 
     print("\n--- RAW LLM OUTPUT ---\n")
     print(raw)
 
+    # Parse response
     parsed = parse_output(raw)
 
-    if parsed:
+    # Validate + print
+    if parsed and validate_output(parsed):
         print_clean_output(parsed)
+    else:
+        print("\n[ERROR] Output validation failed.")
+
+    # Critique the same response and print it in a parsed format.
+    critique_raw = critique_output(raw)
+    critique = parse_critique(critique_raw)
+
+    if critique and validate_critique(critique):
+        print_clean_critique(critique)
+    else:
+        print("\n[ERROR] Critique validation failed.")

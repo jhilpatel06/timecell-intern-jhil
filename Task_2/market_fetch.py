@@ -1,69 +1,77 @@
+import logging
+from datetime import datetime
+
 import yfinance as yf
 from pycoingecko import CoinGeckoAPI
-from datetime import datetime
-import logging
+from tabulate import tabulate
 
-logging.basicConfig(level=logging.ERROR)
+GRAMS_PER_TROY_OUNCE = 31.1034768
+
+logging.basicConfig(level=logging.ERROR, format="%(levelname)s: %(message)s")
+
+cg = CoinGeckoAPI()
+TIMEZONE = "IST"
 
 
-def fetch_crypto_price(symbol="bitcoin"):
+# ---------------- DATA FETCH ---------------- #
+
+def fetch_crypto_price():
     try:
-        cg = CoinGeckoAPI()
-        data = cg.get_price(ids=symbol, vs_currencies="usd")
-        price = data[symbol]["usd"]
-        return ("BTC", price, "USD")
+        data = cg.get_price(ids="bitcoin", vs_currencies="usd")
+        return ("BTC", float(data["bitcoin"]["usd"]), "USD")
     except Exception as e:
         logging.error(f"Crypto fetch failed: {e}")
-        return None
+        return ("BTC", None, "USD")
 
 
-def fetch_stock_price(symbol="^NSEI"):
+def fetch_stock_price():
     try:
-        ticker = yf.Ticker(symbol)
-        price = ticker.history(period="1d")["Close"].iloc[-1]
-        return ("NIFTY50", price, "INR")
+        price = yf.Ticker("^NSEI").history(period="1d")["Close"].iloc[-1]
+        return ("NIFTY50", float(price), "INR")
     except Exception as e:
         logging.error(f"Stock fetch failed: {e}")
-        return None
+        return ("NIFTY50", None, "INR")
 
 
 def fetch_gold_price():
     try:
-        ticker = yf.Ticker("GC=F")
-        price = ticker.history(period="1d")["Close"].iloc[-1]
-        return ("GOLD", price, "USD/oz")
+        gold = yf.Ticker("GC=F").history(period="1d")["Close"].iloc[-1]
+        fx = yf.Ticker("USDINR=X").history(period="1d")["Close"].iloc[-1]
+
+        price = (gold * fx) / GRAMS_PER_TROY_OUNCE
+        return ("GOLD", float(price), "INR/g")
     except Exception as e:
         logging.error(f"Gold fetch failed: {e}")
-        return None
+        return ("GOLD", None, "INR/g")
 
 
-def format_price(price):
-    return f"{price:,.2f}"
+# ---------------- FORMAT + PRINT ---------------- #
+
+def format_price(p):
+    return "ERROR" if p is None else f"{p:,.2f}"
 
 
-def print_table(data):
-    print("\nAsset Prices - fetched at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    print("-" * 55)
-    print(f"{'Asset':10} | {'Price':15} | {'Currency'}")
-    print("-" * 55)
+def print_table(rows):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\nAsset Prices — fetched at {ts} {TIMEZONE}\n")
 
-    for item in data:
-        if item:
-            name, price, currency = item
-            price = format_price(price)
-        else:
-            name, price, currency = "ERROR", "-", "-"
+    table = [[name, format_price(price), currency] for name, price, currency in rows]
 
-        print(f"{name:10} | {price:<15} | {currency}")
+    print(tabulate(
+        table,
+        headers=["Asset", "Price", "Currency"],
+        tablefmt="grid",
+        disable_numparse=True  # prevents tabulate from messing with formatting
+    ))
 
 
 # ---------------- MAIN ---------------- #
 
 if __name__ == "__main__":
-    results = []
-
-    results.append(fetch_crypto_price())
-    results.append(fetch_stock_price())
-    results.append(fetch_gold_price())
+    results = [
+        fetch_crypto_price(),
+        fetch_stock_price(),
+        fetch_gold_price()
+    ]
 
     print_table(results)
