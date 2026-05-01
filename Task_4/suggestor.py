@@ -8,11 +8,17 @@ import sys
 from dotenv import load_dotenv
 from groq import Groq
 
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv()
-api_key = os.getenv("GROQ_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 
 # Computes portfolio value after crash and how many months expenses can be sustained
@@ -132,10 +138,38 @@ def compare_all(portfolio, worst_opt, mod_opt):
 
 
 # Converts numerical results into a simple advisor-style explanation
-def explain(portfolio, worst_opt, mod_opt, stats):
-    if not api_key:
+def generate_with_gemini(prompt):
+    if genai is None:
+        raise ValueError("google-generativeai package is not installed")
+
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY not found in environment")
+
+    genai.configure(api_key=gemini_api_key)
+    model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"))
+    response = model.generate_content(prompt)
+
+    if not response.text:
+        raise ValueError("Gemini returned an empty response")
+
+    return response.text.strip()
+
+
+def generate_with_groq(prompt):
+    if not groq_api_key:
         raise ValueError("GROQ_API_KEY not found in environment")
 
+    client = Groq(api_key=groq_api_key)
+    res = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.6
+    )
+
+    return res.choices[0].message.content.strip()
+
+
+def explain(portfolio, worst_opt, mod_opt, stats):
     base_w, opt_w, base_m, opt_m = stats
 
     prompt = f"""
@@ -155,14 +189,13 @@ Moderate-case runway: {base_m} -> {opt_m}
 Keep it simple and conversational (5-6 sentences).
 """
 
-    client = Groq(api_key=api_key)
-    res = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.6
-    )
-
-    return res.choices[0].message.content.strip()
+    try:
+        print("\n[INFO] Trying Gemini for advisor explanation...")
+        return generate_with_gemini(prompt)
+    except Exception as exc:
+        print(f"\n[WARN] Gemini failed: {exc}")
+        print("[INFO] Falling back to Groq for advisor explanation...")
+        return generate_with_groq(prompt)
 
 
 if __name__ == "__main__":

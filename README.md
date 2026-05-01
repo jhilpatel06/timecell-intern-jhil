@@ -26,7 +26,9 @@ Overall, the process remained incremental — starting simple and refining based
 
 - python-dotenv — used to manage API keys through a local `.env` file.
 
-- Groq API (llama-3.1-8b-instant) — used for generating and validating portfolio explanations.
+- Gemini API — used as the first-choice LLM for generating portfolio explanations.
+
+- Groq API (llama-3.1-8b-instant) — used as the fallback generator and as the critique model for validation.
 
 ## Project Structure
 
@@ -58,6 +60,7 @@ pip install -r requirements.txt
 For Tasks 3 and 4, add a `.env` file:
 
 ```bash
+GEMINI_API_KEY=your_gemini_api_key_here
 GROQ_API_KEY=your_api_key_here
 ```
 
@@ -92,7 +95,7 @@ This was a portfolio risk calculation problem where the main challenge was conve
 
 ### Final outcome
 
-The solution provides post-crash value, runway, ruin test status, largest risk contributor, and allocation concentration in a clear and interpretable form.
+The solution provides post-crash value, runway, ruin test status, largest risk contributor, and allocation concentration in a clear and interpretable form. It also flags concentration risk when any single asset is more than 40% of the portfolio.
 
 ---
 ## Task 2
@@ -135,7 +138,7 @@ This task required generating a plain-English explanation of the portfolio using
 ### How I approached it
 
 - A basic prompt was used initially to pass portfolio details to the model.
-- The Groq API with the LLaMA model was used for response generation.
+- The Gemini API was used first for response generation, with Groq as a fallback if Gemini is unavailable or fails.
 - The implementation was structured into separate steps for prompt building, API calling, output parsing, and validation.
 
 ### What didn't work initially
@@ -150,10 +153,11 @@ This task required generating a plain-English explanation of the portfolio using
 - The prompt was refined to ensure the model explains why a particular allocation is risky.
 - The tone was adjusted to make the explanation more conversational and practical.
 - Parsing and validation were added to ensure the response follows the expected structure.
+- The script prints both the raw LLM response and the extracted structured output separately.
 
 ### Additional step
 
-- A second LLM call was introduced to critique the generated explanation.
+- A second LLM call using Groq was introduced to critique the generated explanation.
 - This helped evaluate clarity, structure, and usefulness instead of relying only on the initial output and could be used as feedback to refine the prompt further.
 
 ### Final outcome
@@ -172,12 +176,15 @@ Given a portfolio and its risk analysis under crash scenarios, determine how the
 
 The existing system explains the current portfolio but does not indicate what can be changed. Extending it to suggest and evaluate allocation changes connects analysis with actionable decision-making.
 
+This also connects with Timecell's product direction, where portfolio risk metrics are not only calculated but used to surface intelligent recommendations for wealth management decisions.
+
 ### How it was implemented
 
 - Existing risk calculations were used to identify assets contributing most to downside.
 - Allocation adjustments were made based on risk contribution.
 - Adjusted allocations were normalized to ensure the portfolio remains valid.
 - Both original and adjusted portfolios were evaluated under severe and moderate crash scenarios.
+- The final explanation uses Gemini first and falls back to Groq if Gemini is unavailable.
 
 ### What this adds
 
@@ -225,3 +232,14 @@ Task 3 was the most challenging, as the initial LLM outputs were generic and inc
 - API-based systems require graceful failure handling due to unreliable external data.
 - LLM outputs improve significantly when structure, tone, and reasoning are explicitly defined.
 - Iterative refinement of generated code and prompts is more effective than one-shot generation.
+
+---
+
+## How to Run
+
+```bash
+python Task_1/portfolio_risk_calculator.py
+python Task_2/market_fetch.py
+python Task_3/ai_explainer.py
+python Task_4/suggestor.py
+```

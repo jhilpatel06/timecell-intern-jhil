@@ -4,6 +4,11 @@ import os
 from dotenv import load_dotenv
 from groq import Groq
 
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 
 DEFAULT_PORTFOLIO = {
     "total_value_inr": 10_000_000,
@@ -20,7 +25,8 @@ DEFAULT_PORTFOLIO = {
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
 
 # --- PROMPT BUILDER ------------------------------------------------------
@@ -83,12 +89,28 @@ Do not include anything outside the JSON.
 # --- LLM CALL ------------------------------------------------------------
 
 
-def generate_portfolio_explanation(portfolio, tone="beginner"):
-    if not api_key:
+def generate_with_gemini(prompt):
+    if genai is None:
+        raise ValueError("google-generativeai package is not installed")
+
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY not found in environment")
+
+    genai.configure(api_key=gemini_api_key)
+    model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"))
+    response = model.generate_content(prompt)
+
+    if not response.text:
+        raise ValueError("Gemini returned an empty response")
+
+    return response.text.strip()
+
+
+def generate_with_groq(prompt):
+    if not groq_api_key:
         raise ValueError("GROQ_API_KEY not found in environment")
 
-    prompt = build_prompt(portfolio, tone)
-    client = Groq(api_key=api_key)
+    client = Groq(api_key=groq_api_key)
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -103,6 +125,18 @@ def generate_portfolio_explanation(portfolio, tone="beginner"):
     )
 
     return response.choices[0].message.content.strip()
+
+
+def generate_portfolio_explanation(portfolio, tone="beginner"):
+    prompt = build_prompt(portfolio, tone)
+
+    try:
+        print("\n[INFO] Trying Gemini for portfolio explanation...")
+        return generate_with_gemini(prompt)
+    except Exception as exc:
+        print(f"\n[WARN] Gemini failed: {exc}")
+        print("[INFO] Falling back to Groq for portfolio explanation...")
+        return generate_with_groq(prompt)
 
 
 # --- PARSING -------------------------------------------------------------
@@ -203,7 +237,7 @@ def print_clean_critique(parsed):
 
 
 def critique_output(raw_output):
-    if not api_key:
+    if not groq_api_key:
         raise ValueError("GROQ_API_KEY not found in environment")
 
     prompt = f"""
@@ -252,7 +286,7 @@ Response to review:
 {raw_output}
 """
 
-    client = Groq(api_key=api_key)
+    client = Groq(api_key=groq_api_key)
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
@@ -300,6 +334,11 @@ if __name__ == "__main__":
 
     # Generate explanation
     raw = generate_portfolio_explanation(portfolio, tone=args.tone)
+
+    print("\n" + "=" * 50)
+    print("RAW LLM RESPONSE")
+    print("=" * 50)
+    print(raw)
 
     # Parse response
     parsed = parse_output(raw)
