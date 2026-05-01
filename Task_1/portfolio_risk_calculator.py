@@ -1,11 +1,6 @@
 import copy
 import sys
 
-
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-
-
 def compute_risk_metrics(portfolio):
     # Extract core inputs from portfolio
     total_value = portfolio["total_value_inr"]
@@ -82,7 +77,9 @@ def print_results(title, results):
     for key, value in results.items():
         print(f"{key:25}: {value}")
 
-
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    
 def print_allocation_bar_chart(portfolio):
     # CLI visualization → helps quickly inspect allocation distribution
     print("\nPortfolio Allocation:\n")
