@@ -1,17 +1,26 @@
+import argparse
 import json
 import os
 from dotenv import load_dotenv
 from groq import Groq
+
+
+DEFAULT_PORTFOLIO = {
+    "total_value_inr": 10_000_000,
+    "monthly_expenses_inr": 80_000,
+    "assets": [
+        {"name": "BTC", "allocation_pct": 30, "expected_crash_pct": -80},
+        {"name": "NIFTY50", "allocation_pct": 40, "expected_crash_pct": -40},
+        {"name": "GOLD", "allocation_pct": 20, "expected_crash_pct": -15},
+        {"name": "CASH", "allocation_pct": 10, "expected_crash_pct": 0},
+    ],
+}
 
 # --- SETUP ---------------------------------------------------------------
 
 load_dotenv()
 
 api_key = os.getenv("GROQ_API_KEY")
-if not api_key:
-    raise ValueError("GROQ_API_KEY not found in environment")
-
-client = Groq(api_key=api_key)
 
 
 # --- PROMPT BUILDER ------------------------------------------------------
@@ -75,7 +84,11 @@ Do not include anything outside the JSON.
 
 
 def generate_portfolio_explanation(portfolio, tone="beginner"):
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not found in environment")
+
     prompt = build_prompt(portfolio, tone)
+    client = Groq(api_key=api_key)
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -123,6 +136,31 @@ def validate_critique(parsed):
     return all(key in parsed for key in required)
 
 
+def load_portfolio(path):
+    if not path:
+        return DEFAULT_PORTFOLIO
+
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Generate an AI-powered portfolio risk explanation."
+    )
+    parser.add_argument(
+        "--portfolio",
+        help="Optional path to a JSON portfolio file. Uses the sample portfolio if omitted.",
+    )
+    parser.add_argument(
+        "--tone",
+        choices=["beginner", "experienced", "expert"],
+        default="beginner",
+        help="Explanation tone to request from the LLM.",
+    )
+    return parser.parse_args()
+
+
 # --- DISPLAY -------------------------------------------------------------
 
 
@@ -165,6 +203,9 @@ def print_clean_critique(parsed):
 
 
 def critique_output(raw_output):
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not found in environment")
+
     prompt = f"""
 You are reviewing a financial explanation.
 
@@ -211,6 +252,7 @@ Response to review:
 {raw_output}
 """
 
+    client = Groq(api_key=api_key)
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
@@ -253,23 +295,11 @@ def parse_critique(raw):
 # --- MAIN ---------------------------------------------------------------
 
 if __name__ == "__main__":
-
-    portfolio = {
-        "total_value_inr": 10_000_000,
-        "monthly_expenses_inr": 80_000,
-        "assets": [
-            {"name": "BTC", "allocation_pct": 30, "expected_crash_pct": -80},
-            {"name": "NIFTY50", "allocation_pct": 40, "expected_crash_pct": -40},
-            {"name": "GOLD", "allocation_pct": 20, "expected_crash_pct": -15},
-            {"name": "CASH", "allocation_pct": 10, "expected_crash_pct": 0},
-        ],
-    }
+    args = parse_args()
+    portfolio = load_portfolio(args.portfolio)
 
     # Generate explanation
-    raw = generate_portfolio_explanation(portfolio, tone="beginner")
-
-    print("\n--- RAW LLM OUTPUT ---\n")
-    print(raw)
+    raw = generate_portfolio_explanation(portfolio, tone=args.tone)
 
     # Parse response
     parsed = parse_output(raw)

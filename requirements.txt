@@ -1,0 +1,5 @@
+groq
+pycoingecko
+python-dotenv
+tabulate
+yfinance
