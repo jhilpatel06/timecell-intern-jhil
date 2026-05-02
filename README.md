@@ -14,7 +14,7 @@ Overall, the process remained incremental — starting simple and refining based
 
 ## Tech Stack
 
-- Python 3.10+ — used for implementing the core logic, data handling, and CLI output.
+- Python 3.14.4 — used for implementing the core logic, data handling, and CLI output.
 
 - yfinance — used to fetch market data for index, gold, and currency conversion inputs.
 
@@ -24,7 +24,7 @@ Overall, the process remained incremental — starting simple and refining based
 
 - python-dotenv — used to manage API keys through a local `.env` file.
 
-- Gemini API — used as the first-choice LLM for generating portfolio explanations.
+- Gemini API (gemini-3-flash-preview) — used as the first-choice LLM for generating portfolio explanations.
 
 - Groq API (llama-3.1-8b-instant) — used as the fallback generator and as the critique model for validation.
 
