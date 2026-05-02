@@ -6,8 +6,6 @@ This project works through evaluating a portfolio under a crash scenario, bringi
 
 Since finance was not a familiar domain, the initial effort went into understanding how allocation, crash assumptions, and expenses translate into actual outcomes like portfolio survival. Once that was clear, the focus shifted to building a working version and improving how the results are interpreted.
 
-Early outputs were numerically correct but lacked clarity, which led to adding better risk indicators, improving data handling, and structuring the explanation to make it easier to follow.
-
 AI tools were used to speed up development and iterate on different approaches, while the direction, validation, and refinements were guided by observing where the outputs felt unclear or incomplete.
 
 Overall, the process remained incremental — starting simple and refining based on what was missing or not working well.
